@@ -1,6 +1,6 @@
 {% extends "package/base.html" %}
 {% load i18n %}
-{% load static %}
+{% load sstatic %}
 
 {% block title %}{% translate "Pick a package to use" %}{% endblock title %}
 
@@ -10,7 +10,7 @@
 
 {% block head %}
     {{block.super}}
-    <script type="module" src="{% static 'package/deep_link_pick_package.mjs' %}"></script>
+    <script type="module" src="{% sstatic 'package/deep_link_pick_package.mjs' %}"></script>
 {% endblock head %}
 
 {% block main %}

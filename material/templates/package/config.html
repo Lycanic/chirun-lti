@@ -1,5 +1,5 @@
 {% extends "package/base.html" %}
-{% load static %}
+{% load sstatic %}
 {% load i18n %}
 
 {% block title %}{% translate "Configuring" %} {{block.super}}{% endblock title %}
@@ -9,7 +9,7 @@
 
 
 {% block head %}
-    <script src="{% static 'package/configure.mjs' %}" type="module"></script>
+    <script src="{% sstatic 'package/configure.mjs' %}" type="module"></script>
     {{files|json_script:"files_json"}}
     {{config|json_script:"config_json"}}
 

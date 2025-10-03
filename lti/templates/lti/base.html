@@ -1,5 +1,5 @@
 {% load i18n %}
-{% load static %}
+{% load sstatic %}
 <!doctype html>
 <html lang="en">
     <head>
@@ -7,7 +7,7 @@
         <meta name="viewport" content="width=device-width,initial-scale=1">
         <title>{% block title %}{% translate "Chirun" %}{% endblock title %}</title>
         {% block head %}
-            <link rel="stylesheet" href="{% static 'chirun_lti.css' %}">
+            <link rel="stylesheet" href="{% sstatic 'chirun_lti.css' %}">
         {% endblock head %}
     </head>
     <body class="{% block body_class %}{% endblock %}" {% block body_attributes %}{% endblock body_attributes %}>

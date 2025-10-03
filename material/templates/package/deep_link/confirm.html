@@ -1,14 +1,14 @@
 {% extends "package/base.html" %}
 {% load i18n %}
 {% load material %}
-{% load static %}
+{% load sstatic %}
 
 {% block head %}
     {{block.super}}
 
     {{package.get_output_url|urljoin:theme.path|json_script:"output_root_url"}}
 
-    <script src="{% static 'package/deep_link_confirm.mjs' %}" type="module"></script>
+    <script src="{% sstatic 'package/deep_link_confirm.mjs' %}" type="module"></script>
 {% endblock head %}
 
 {% block title %}{% translate "Pick an item" %} - {{block.super}}{% endblock title %}

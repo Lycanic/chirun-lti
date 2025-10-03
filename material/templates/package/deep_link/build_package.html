@@ -1,5 +1,5 @@
 {% extends "package/base.html" %}
-{% load static %}
+{% load sstatic %}
 {% load i18n %}
 
 {% block title %}{% translate "Building a package" %} - {{block.super}}{% endblock title %}
@@ -10,7 +10,7 @@
 {% block head %}
     {{block.super}}
     {{package.uid|json_script:"package_uid"}}
-    <script type="module" src="{% static 'package/deep_link_build_package.mjs' %}"></script>
+    <script type="module" src="{% sstatic 'package/deep_link_build_package.mjs' %}"></script>
 {% endblock head %}
 
 {% block main %}

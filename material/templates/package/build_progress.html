@@ -1,5 +1,5 @@
 {% extends "package/base.html" %}
-{% load static %}
+{% load sstatic %}
 {% load i18n %}
 
 {% block body_class %}build-progress build-package{% endblock body_class %}
@@ -8,8 +8,8 @@
 {% block head %}
     {{block.super}}
     {{status_json|json_script:"status_json"}}
-    <script src="{% static 'package/build_progress.mjs' %}" type="module"></script>
-    <link rel="stylesheet" href="{% static 'package/build_progress.css' %}">
+    <script src="{% sstatic 'package/build_progress.mjs' %}" type="module"></script>
+    <link rel="stylesheet" href="{% sstatic 'package/build_progress.css' %}">
 {% endblock head %}
 
 {% block main %}

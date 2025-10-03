@@ -1,6 +1,6 @@
 {% extends "lti/base.html" %}
 {% load i18n %}
-{% load static %}
+{% load sstatic %}
 
 {% block body_class %}registration begin {{block.super}}{% endblock body_class %}
 
@@ -75,7 +75,7 @@
 
     <p>{% blocktranslate %}Use the following icon image:{% endblocktranslate %}</p>
 
-    <p><img src="{% static "chirun_icon_50.png" %}" alt="{% translate "Chirun icon" %}"></p>
+    <p><img src="{% sstatic "chirun_icon_50.png" %}" alt="{% translate "Chirun icon" %}"></p>
 
     <p>TODO - is there a missing step where you get a deployment ID?</p>
 </article>
