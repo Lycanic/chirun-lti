@@ -49,6 +49,8 @@ type Setting
     = StringSetting String
     | IntSetting Int
     | BoolSetting Bool
+    | DictSetting (Dict String Setting)
+    | ListSetting (List Setting)
 
 {- A dictionary of settings for a package or item. -}
 type alias SettingsDict = Dict String Setting
@@ -124,7 +126,7 @@ type ItemMsg
 type Msg
     = SetTab Tab
     | ItemMsg ItemMsg ItemPath
-    | SetPackageSetting String Setting
+    | SetPackageSetting (List String) String Setting
     | AddItem (Maybe ItemPath) ContentItemType
     | FocusButton (Result Browser.Dom.Error ())
 
@@ -157,8 +159,18 @@ package_defaults = Dict.fromList
     , ("static_dir", StringSetting "")
     , ("root_url", StringSetting "")
     , ("build_pdf", BoolSetting True)
+    , ("build_zip", BoolSetting True)
     , ("num_pdf_runs", IntSetting 1)
     , ("mathjax_url", StringSetting "")
+    , ("css", ListSetting [])
+    , ("js", ListSetting [])
+    , ("license", DictSetting (Dict.fromList
+        [ ("name", StringSetting "")
+        , ("year", StringSetting "")
+        , ("url", StringSetting "")
+        , ("by", StringSetting "")
+        ]
+      ))
     ]
 
 {- Default item setting values. -}
@@ -274,10 +286,20 @@ update msg model = case msg of
 
     SetTab tab -> { model | tab = tab } |> nocmd
 
-    SetPackageSetting key setting -> { model | package = set_package_setting key setting model.package } |> nocmd
+    SetPackageSetting path key setting -> { model | package = set_package_setting path key setting model.package } |> nocmd
 
-set_package_setting : String -> Setting -> Package -> Package
-set_package_setting key setting package = { package | settings = Dict.insert key setting package.settings }
+set_package_setting : List String -> String -> Setting -> Package -> Package
+set_package_setting whole_path key setting package = 
+    let 
+        visit : SettingsDict -> List String -> SettingsDict
+        visit settings path = case path of
+            [] -> Dict.insert key setting settings
+            a::rest -> case Dict.get a settings of
+                Just (DictSetting s) -> Dict.insert a (DictSetting (visit s rest)) settings
+                Nothing -> Dict.insert a (DictSetting (visit (Dict.empty) rest)) settings
+                _ -> settings
+    in
+        { package | settings = visit package.settings whole_path }
 
 {- Update an item with the result of `fn`. -}
 update_item : ItemPath -> (Tree ContentItem -> Tree ContentItem) -> Package -> Package
@@ -349,6 +371,16 @@ int_setting : MapSetting Int
 int_setting setting = case setting of
     IntSetting i -> i
     _ -> 0
+
+list_setting : (MapSetting a) -> MapSetting (List a)
+list_setting item setting = case setting of
+    ListSetting l -> List.map item l
+    _ -> []
+
+dict_setting : MapSetting (Dict String Setting)
+dict_setting setting = case setting of
+    DictSetting d -> d
+    _ -> Dict.empty
 
 get_string_setting : SettingGetter String
 get_string_setting = map_setting string_setting
@@ -442,7 +474,7 @@ form model =
                 , structure_tree model
                 ]
             , case model.tab of
-                PackageSettingsTab -> package_settings_tab model.package
+                PackageSettingsTab -> package_settings_tab model
                 ContentItemTab path -> case FN.to path model.package.content of
                     Just t -> item_settings_tab model path t
                     Nothing -> div [] [ text "Oh no!" ]
@@ -465,18 +497,23 @@ locale_options =
     [ ("en", "English")
     ]
 
-{- The editor tab for global package settings. -}
-package_settings_tab : Package -> Html Msg
-package_settings_tab package =
+form_generator model setting_getter msg = 
     let
-        package_setting : String -> Setting
-        package_setting key = get_setting package_defaults package.settings key
-
         pcontrol : Form.GenericControl input output Setting Msg
-        pcontrol = Form.render package_setting SetPackageSetting
+        pcontrol = Form.render setting_getter msg
 
         text_input : Form.Control String String Msg
         text_input = pcontrol string_setting StringSetting Form.text_input
+
+        textarea: Form.Control String String Msg
+        textarea = pcontrol string_setting StringSetting Form.textarea
+
+        comma_list : Form.Control String String Msg
+        comma_list = 
+            pcontrol 
+                (list_setting string_setting >> String.join ",") 
+                (String.split "," >> List.map String.trim >> (\x -> if List.all ((==) "") x then [] else x) >> List.map StringSetting >> ListSetting)
+                Form.text_input
 
         select : Form.SelectOptions -> Form.Control String String Msg
         select options = pcontrol string_setting StringSetting (Form.select options)
@@ -486,6 +523,39 @@ package_settings_tab package =
 
         bool_checkbox : Form.Control Bool Bool Msg
         bool_checkbox = pcontrol bool_setting BoolSetting Form.bool_checkbox
+
+        file_selector : FS.FileFilter -> Form.Control String String Msg
+        file_selector valid_files = pcontrol string_setting StringSetting (Form.file_selector (FS.filter valid_files model.files))
+
+    in
+        { pcontrol = pcontrol
+        , text_input = text_input
+        , textarea = textarea
+        , comma_list = comma_list
+        , select = select
+        , int_input = int_input
+        , bool_checkbox = bool_checkbox
+        , file_selector = file_selector
+        }
+
+{- The editor tab for global package settings. -}
+package_settings_tab : Model -> Html Msg
+package_settings_tab model =
+    let
+        package = model.package
+
+        package_setting : String -> Setting
+        package_setting key = get_setting package_defaults package.settings key
+        
+        license : Dict String Setting
+        license = package_setting "license" |> dict_setting
+
+        license_setting : String -> Setting
+        license_setting key = Dict.get key license |> Maybe.withDefault (StringSetting "")
+
+        p = form_generator model package_setting (SetPackageSetting [])
+
+        l = form_generator model license_setting (SetPackageSetting ["license"])
     in
         H.section
             [ HA.id "package-settings"
@@ -494,20 +564,32 @@ package_settings_tab package =
             [ H.fieldset
                 []
                 (  [ H.legend [] [ text "Package metadata" ] ]
-                ++ (text_input identity "title" "Title")
-                ++ (text_input identity "author" "Author")
-                ++ (text_input identity "institution" "Institution")
-                ++ (text_input identity "code" "Course code")
-                ++ (text_input identity "year" "Year")
-                ++ (select locale_options identity "locale" "Language")
+                ++ (p.text_input identity "title" "Title")
+                ++ (p.text_input identity "author" "Author")
+                ++ (p.text_input identity "institution" "Institution")
+                ++ (p.text_input identity "code" "Course code")
+                ++ (p.text_input identity "year" "Year")
+                ++ (p.select locale_options identity "locale" "Language")
+                )
+
+            , H.fieldset
+                []
+                (  [ H.legend [] [ text "Licence" ] ]
+                ++ (l.text_input identity "name" "Licence name")
+                ++ (l.text_input identity "url" "Licence URL")
+                ++ (l.text_input identity "year" "Copyright year")
+                ++ (l.text_input identity "by" "Copyright attribution")
                 )
 
             , H.fieldset
                 []
                 (  [ H.legend [] [ text "Build options" ] ]
-                ++ (bool_checkbox identity "build_pdf" "Build PDFs?")
-                ++ (Form.visible_if (package_setting "build_pdf" |> bool_setting) <| pcontrol int_setting IntSetting Form.int_input identity "num_pdf_runs" "Number of PDF runs")
-                ++ (text_input identity "mathjax_url" "URL to load MathJax from")
+                ++ (p.bool_checkbox identity "build_pdf" "Build PDFs?")
+                ++ (p.bool_checkbox identity "build_zip" "Build zip of entire package?")
+                ++ (Form.visible_if (package_setting "build_pdf" |> bool_setting) <| p.pcontrol int_setting IntSetting Form.int_input identity "num_pdf_runs" "Number of PDF runs")
+                ++ (p.text_input identity "mathjax_url" "URL to load MathJax from")
+                ++ (p.comma_list identity "css" "Extra CSS files")
+                ++ (p.comma_list identity "js" "Extra JavaScript files")
                 )
             ]
 
@@ -534,27 +616,7 @@ item_settings_tab model path tree =
         item_setting : String -> Setting
         item_setting key = get_setting item_defaults item.settings key
 
-        pcontrol : Form.GenericControl input output Setting Msg
-        pcontrol = Form.render item_setting (\id s -> ItemMsg (SetSetting id s) path)
-
-        text_input : Form.Control String String Msg
-        text_input = pcontrol string_setting StringSetting Form.text_input
-
-        textarea : Form.Control String String Msg
-        textarea = pcontrol string_setting StringSetting Form.textarea
-
-        select : Form.SelectOptions -> Form.Control String String Msg
-        select options = pcontrol string_setting StringSetting (Form.select options)
-
-        int_input : Form.Control Int Int Msg
-        int_input = pcontrol int_setting IntSetting Form.int_input
-
-        bool_checkbox : Form.Control Bool Bool Msg
-        bool_checkbox = pcontrol bool_setting BoolSetting Form.bool_checkbox
-
-        file_selector : FS.FileFilter -> Form.Control String String Msg
-        file_selector valid_files = pcontrol string_setting StringSetting (Form.file_selector (FS.filter valid_files model.files))
-
+        p = form_generator model item_setting (\id s -> ItemMsg (SetSetting id s) path)
 
         item_type_options : Form.SelectOptions
         item_type_options = List.map (\t -> (item_type_code t, item_type_name t)) content_item_types
@@ -576,9 +638,9 @@ item_settings_tab model path tree =
 
         source_input : List (Html Msg)
         source_input = case item.type_ of
-            URL -> text_input (Form.with_hint (text "A URL")) "source" "URL"
-            HTML -> textarea identity "html" "HTML code"
-            _ -> file_selector is_source_file identity "source" "Source"
+            URL -> p.text_input (Form.with_hint (text "A URL")) "source" "URL"
+            HTML -> p.textarea identity "html" "HTML code"
+            _ -> p.file_selector is_source_file identity "source" "Source"
 
 
         {- Add a preview to a form control whose value is a filename that might refer to an image. -}
@@ -618,7 +680,7 @@ item_settings_tab model path tree =
         {- The select box for the "document split level" setting. -}
         splitlevel_select : List (Html Msg)
         splitlevel_select = 
-             pcontrol
+             p.pcontrol
                 (int_setting >> String.fromInt)
                 (String.toInt >> Maybe.withDefault 0 >> IntSetting)
                 (splitlevel_options |> List.map (Tuple.mapFirst String.fromInt) |> Form.select)
@@ -669,31 +731,33 @@ item_settings_tab model path tree =
                 []
                 (  [ H.legend [] [ text "Metadata" ] ]
                 ++ (type_select)
-                ++ (text_input (Form.with_placeholder "Unnamed item") "title" "Title")
-                ++ (text_input identity "slug" "Slug")
-                ++ (text_input identity "author" "Author")
+                ++ (p.text_input (Form.with_placeholder "Unnamed item") "title" "Title")
+                ++ (p.text_input identity "slug" "Slug")
+                ++ (p.text_input identity "author" "Author")
                 )
             
             , H.fieldset
                 []
                 (   [ H.legend [] [ text "Source" ] ]
                  ++ (source_input)
-                 ++ (file_selector is_image_file image_preview "thumbnail" "Thumbnail image")
+                 ++ (p.file_selector is_image_file image_preview "thumbnail" "Thumbnail image")
                  ++ (if item.type_ /= Document then [] else splitlevel_select)
                 )
 
             , H.fieldset
                 []
                 (   [ H.legend [] [ text "Display options" ] ]
-                 ++ (bool_checkbox identity "is_hidden" "Hidden?")
+                 ++ (p.bool_checkbox identity "is_hidden" "Hidden?")
                  ++ (Form.visible_if can_build_pdf <|
-                        (bool_checkbox identity "build_pdf" "Build PDF?")
-                     ++ (Form.visible_if (item_setting "build_pdf" |> bool_setting) <| text_input identity "pdf_url" "PDF URL")
+                        (p.bool_checkbox identity "build_pdf" "Build PDF?")
+                     ++ (Form.visible_if (item_setting "build_pdf" |> bool_setting) <| p.text_input identity "pdf_url" "PDF URL")
                     )
-                 ++ (bool_checkbox identity "sidebar" "Show the sidebar?")
-                 ++ (bool_checkbox identity "topbar" "Show the top bar?")
-                 ++ (bool_checkbox identity "footer" "Show the footer?")
-                 ++ (bool_checkbox identity "pager" "Show the pager?")
+                 ++ (p.bool_checkbox identity "sidebar" "Show the sidebar?")
+                 ++ (p.bool_checkbox identity "topbar" "Show the top bar?")
+                 ++ (p.bool_checkbox identity "footer" "Show the footer?")
+                 ++ (p.bool_checkbox identity "pager" "Show the pager?")
+                 ++ (p.comma_list identity "css" "Extra CSS files")
+                 ++ (p.comma_list identity "js" "Extra JavaScript files")
                 )
             ]
 
@@ -866,8 +930,8 @@ structure_tree model =
 encode_package : Package -> JE.Value
 encode_package package = 
     JE.object
-        ([ ("structure", JE.list encode_content_item package.content) ]
-        ++(encode_settings package.settings)
+        (  (encode_settings package.settings)
+        ++ [ ("structure", JE.list encode_content_item package.content) ]
         )
 
 encode_content_item : Tree ContentItem -> JE.Value
@@ -891,6 +955,8 @@ encode_setting setting = case setting of
     StringSetting s -> JE.string s
     IntSetting i -> JE.int i
     BoolSetting b -> JE.bool b
+    DictSetting d -> JE.dict identity encode_setting d
+    ListSetting l -> JE.list encode_setting l
 
 
 decode_package : JD.Decoder Package
@@ -935,5 +1001,7 @@ decode_setting =
             [ JD.int |> JD.map IntSetting
             , JD.string |> JD.map StringSetting
             , JD.bool |> JD.map BoolSetting
+            , JD.dict (JD.lazy (\_ -> decode_setting)) |> JD.map (Dict.toList >> List.filterMap (\(k,mv) -> Maybe.map (pair k) mv) >> Dict.fromList) |> JD.map DictSetting
+            , JD.list (JD.lazy (\_ -> decode_setting)) |> JD.map (List.filterMap identity) |> JD.map ListSetting
             ]
     |> JD.maybe

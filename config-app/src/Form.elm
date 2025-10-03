@@ -279,10 +279,19 @@ with_hint hint element control value =
     * The control's ID.
     * The control's displayed label.
 -}
-render : (String -> store) -> (String -> store -> msg) -> (store -> input) -> (output -> store) -> FormControlElement output input msg -> (FormControlElement output input msg -> FormControlElement output input msg) -> String -> String -> List (Html msg)
-render getter msg m o element map_element id label = 
+render : 
+    (String -> store) -- getter
+    -> (String -> store -> msg) -- store_msg
+    -> (store -> input) -- map_store_to_input
+    -> (output -> store) -- map_output_to_store
+    -> FormControlElement output input msg -- element
+    -> (FormControlElement output input msg -> FormControlElement output input msg) -- map_element
+    -> String -- id
+    -> String -- label
+    -> List (Html msg)
+render getter store_msg map_store_to_input map_output_to_store element map_element id label = 
     (element |> labelled label |> map_element)
-        { id = id, onInput = o >> msg id, attr = \_ -> [] }
-        (getter id |> m)
+        { id = id, onInput = map_output_to_store >> store_msg id, attr = \_ -> [] }
+        (getter id |> map_store_to_input)
     |> \c -> (wrap_multiple c.label)++(wrap_multiple c.input)
 
